@@ -5,15 +5,17 @@ public class WebRTCMessage {
     private String type;
     private Object data;
     private String roomId;
+    private String fullName;
     
     public WebRTCMessage() {
     }
     
-    public WebRTCMessage(String from, String type, Object data, String roomId) {
+    public WebRTCMessage(String from, String type, Object data, String roomId, String fullName) {
         this.from = from;
         this.type = type;
         this.data = data;
         this.roomId = roomId;
+        this.fullName = fullName;
     }
     
     public String getFrom() {
@@ -46,5 +48,13 @@ public class WebRTCMessage {
     
     public void setRoomId(String roomId) {
         this.roomId = roomId;
+    }
+    
+    public String getFullName() {
+        return fullName;
+    }
+    
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
     }
 } 

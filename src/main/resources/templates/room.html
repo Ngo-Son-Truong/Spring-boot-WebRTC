@@ -96,18 +96,34 @@
         #my-video {
             transform: scaleX(-1); /* Mirror my video */
         }
+        .user-dropdown {
+            color: white;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
     <div class="container-fluid py-4">
         <div class="room-info">
             <div class="d-flex justify-content-between align-items-center">
-                <h3 th:text="${room.name}">Room Name</h3>
                 <div>
+                    <h3 th:text="${room.name}">Room Name</h3>
                     <span class="badge bg-success me-2">
                         <i class="fas fa-users me-1"></i>
                         <span id="participant-count" th:text="${room.participants.size()}">0</span> Participants
                     </span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="dropdown">
+                        <a class="user-dropdown dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-user-circle me-1"></i> <span th:text="${user.fullName}">User</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li class="dropdown-item">
+                                <i class="fas fa-user"></i> <span th:text="${user.username}">username</span>
+                            </li>
+                        </ul>
+                    </div>
                     <a href="/" class="btn btn-outline-light btn-sm">
                         <i class="fas fa-home me-1"></i> Home
                     </a>
@@ -119,7 +135,7 @@
             <!-- Local video will be placed here -->
             <div class="video-item" id="local-video-container">
                 <video id="my-video" autoplay muted playsinline></video>
-                <div class="user-info">You</div>
+                <div class="user-info" th:text="${user.fullName}">You</div>
             </div>
             <!-- Remote videos will be dynamically added here -->
         </div>
@@ -157,6 +173,7 @@
         const roomId = /*[[${room.id}]]*/ 'room-id';
         const userId = /*[[${userId}]]*/ 'user-id';
         const roomName = /*[[${room.name}]]*/ 'Room Name';
+        const userName = /*[[${fullName}]]*/ 'User Name';
         
         // WebRTC variables
         let localStream;
@@ -295,6 +312,11 @@
                 
                 // Join the room
                 sendSignal('join', null);
+                
+                // Sau khi kết nối, thông báo tên người dùng cho tất cả
+                setTimeout(() => {
+                    sendSignal('announce', { name: userName });
+                }, 2000);
             }, (error) => {
                 console.error('WebSocket connection error:', error);
                 alert('Failed to connect to signaling server. Please try again.');
@@ -306,7 +328,8 @@
                 from: userId,
                 type: type,
                 data: data,
-                roomId: roomId
+                roomId: roomId,
+                fullName: userName
             };
             
             stompClient.send('/app/webrtc-signal', {}, JSON.stringify(message));
@@ -316,6 +339,11 @@
             if (signal.from === userId) return; // Ignore messages from self
             
             const peerId = signal.from;
+            
+            // Update peer name if provided in any message
+            if (signal.fullName) {
+                updatePeerName(peerId, signal.fullName);
+            }
             
             switch (signal.type) {
                 case 'join':
@@ -344,6 +372,39 @@
                     // User left, remove peer connection
                     handlePeerDisconnect(peerId);
                     break;
+                    
+                case 'request-name':
+                    // Someone is requesting our name
+                    if (signal.data && signal.data.requesterId) {
+                        // Respond with our name
+                        sendSignal('name-response', {
+                            targetId: signal.from,
+                            name: userName
+                        });
+                    }
+                    break;
+                    
+                case 'name-response':
+                    // Received a name response
+                    if (signal.data && signal.data.name) {
+                        updatePeerName(peerId, signal.data.name);
+                    }
+                    break;
+                    
+                case 'announce':
+                    // User is announcing their name
+                    if (signal.fullName) {
+                        updatePeerName(peerId, signal.fullName);
+                    }
+                    break;
+            }
+        }
+        
+        // Hàm cập nhật tên người dùng
+        function updatePeerName(peerId, name) {
+            const targetInfoElement = document.getElementById(`user-info-${peerId}`);
+            if (targetInfoElement) {
+                targetInfoElement.textContent = name;
             }
         }
         
@@ -379,6 +440,11 @@
             pc.ontrack = (event) => {
                 if (!document.getElementById(`remote-video-${peerId}`)) {
                     createRemoteVideoElement(peerId, event.streams[0]);
+                    
+                    // Yêu cầu tên người dùng ngay sau khi nhận được track
+                    setTimeout(() => {
+                        sendUserNameRequest(peerId);
+                    }, 1000);
                 }
             };
         }
@@ -468,11 +534,23 @@
             
             const userInfo = document.createElement('div');
             userInfo.className = 'user-info';
-            userInfo.textContent = `User ${peerId.substring(0, 5)}...`;
+            userInfo.id = `user-info-${peerId}`;
+            userInfo.textContent = `Đang kết nối...`;
             
             videoItem.appendChild(video);
             videoItem.appendChild(userInfo);
             videoContainer.appendChild(videoItem);
+            
+            // Yêu cầu tên từ người dùng từ xa
+            sendUserNameRequest(peerId);
+        }
+        
+        // Hàm gửi yêu cầu tên người dùng
+        function sendUserNameRequest(targetId) {
+            sendSignal('request-name', { 
+                requesterId: userId,
+                targetId: targetId
+            });
         }
         
         async function toggleScreenShare() {
@@ -529,7 +607,7 @@
                     
                     const userInfo = document.createElement('div');
                     userInfo.className = 'user-info';
-                    userInfo.textContent = 'Your Screen';
+                    userInfo.textContent = userName + ' (Screen)';
                     
                     screenVideoItem.appendChild(screenVideo);
                     screenVideoItem.appendChild(userInfo);
